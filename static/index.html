@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recap Studio v3 AUTO — Upload · Generate · Download</title>
+<style>
+  :root{
+    --bg:#07070c; --card:#12121e; --card2:#171728; --border:#2b2b44;
+    --violet:#7c4dff; --violet2:#9d7bff; --gold:#ffc93c; --gold2:#e0a800;
+    --text:#f2f1fa; --muted:#a5a3c0; --ok:#39d98a; --err:#ff6b7a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1000px 500px at 50% -80px,rgba(124,77,255,.22),transparent 60%),var(--bg);
+       color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Myanmar",sans-serif;
+       min-height:100vh}
+  .wrap{max-width:680px;margin:0 auto;padding:16px 14px 44px}
+  header{text-align:center;padding:20px 6px 4px}
+  header h1{font-size:1.55rem;letter-spacing:.3px}
+  header h1 .gold{color:var(--gold)}
+  header p{color:var(--muted);font-size:.92rem;margin-top:6px}
+  .pills{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  .pill{border:1px solid var(--border);background:var(--card2);color:var(--muted);
+        border-radius:999px;padding:5px 12px;font-size:.75rem}
+  .pill.hot{border-color:var(--gold2);color:var(--gold)}
+  .steps{display:flex;gap:6px;margin:16px 0 4px;flex-wrap:wrap}
+  .step{flex:1;min-width:70px;text-align:center;border:1px solid var(--border);
+        background:var(--card);border-radius:999px;padding:7px 4px;font-size:.72rem;color:var(--muted)}
+  .step b{color:var(--gold);display:block;font-size:.85rem}
+  .step.on{border-color:var(--violet);color:var(--text);box-shadow:0 0 14px rgba(124,77,255,.35)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:18px;
+        padding:18px;margin-top:14px;box-shadow:0 0 24px rgba(124,77,255,.10)}
+  .card h2{font-size:1.02rem;margin-bottom:4px}
+  .card h2 .n{color:var(--gold);margin-right:6px}
+  .card .sub{color:var(--muted);font-size:.84rem;margin-bottom:10px}
+  .drop{border:2px dashed var(--border);border-radius:14px;padding:26px 12px;text-align:center;
+        cursor:pointer;background:var(--card2)}
+  .drop:hover{border-color:var(--violet)}
+  .drop .big{font-size:1.05rem;font-weight:600}
+  .drop .small{color:var(--muted);font-size:.8rem;margin-top:5px}
+  #fileName{color:var(--gold);font-size:.88rem;margin-top:10px;word-break:break-all}
+  video{width:100%;border-radius:12px;margin-top:12px;display:none;background:#000}
+  label{display:block;font-size:.84rem;color:var(--muted);margin:13px 0 6px}
+  select{width:100%;background:#0a0a14;color:var(--text);border:1px solid var(--border);
+         border-radius:12px;padding:13px;font-size:1rem}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  .check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:.9rem;color:var(--text)}
+  .check input{width:20px;height:20px;accent-color:var(--violet)}
+  .gen{width:100%;margin-top:18px;background:linear-gradient(135deg,var(--violet),#5b2ee5);
+       color:#fff;border:none;border-radius:999px;padding:16px;font-size:1.08rem;font-weight:700;
+       cursor:pointer;box-shadow:0 6px 22px rgba(124,77,255,.4)}
+  .gen:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+  .barwrap{background:#0a0a14;border:1px solid var(--border);border-radius:999px;height:20px;
+           overflow:hidden;margin-top:14px;display:none}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--violet),var(--gold));
+       transition:width .5s ease}
+  #statusMsg{font-size:.9rem;margin-top:10px;color:var(--text);display:none}
+  #statusMsg.err{color:var(--err)}
+  .dl{display:none;width:100%;margin-top:14px;background:linear-gradient(135deg,#1fae62,#128a4c);
+      color:#fff;text-align:center;text-decoration:none;border-radius:999px;padding:16px;
+      font-size:1.05rem;font-weight:700}
+  .srt{display:none;text-align:center;margin-top:10px}
+  .srt a{color:var(--gold);font-size:.88rem}
+  .note{background:rgba(124,77,255,.08);border:1px solid rgba(124,77,255,.35);border-radius:12px;
+        padding:11px 14px;font-size:.83rem;color:#cfc4ff;margin-top:14px;line-height:1.55}
+  footer{color:var(--muted);font-size:.75rem;text-align:center;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎬 Recap Studio <span class="gold">v3 AUTO</span></h1>
+    <p>Upload a clip → Generate → Download. အလိုအလျောက် ဘာသာပြန် + အသံသစ် + စာတန်း</p>
+    <div class="pills">
+      <span class="pill hot">AUTO dub</span><span class="pill">Auto translate</span>
+      <span class="pill">Auto subtitles</span><span class="pill">Server render</span>
+    </div>
+  </header>
+
+  <div class="steps">
+    <div class="step on" id="st1"><b>1</b>Upload</div>
+    <div class="step" id="st2"><b>2</b>Languages &amp; voice</div>
+    <div class="step" id="st3"><b>3</b>Generate</div>
+    <div class="step" id="st4"><b>4</b>Download</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">01</span>Upload your video · ဗီဒီယိုတင်ပါ</h2>
+    <div class="sub">MP4, MOV, MKV, WebM — up to 200 MB. Short clips (under ~3 minutes) work best.</div>
+    <div class="drop" id="drop">
+      <div class="big">📁 Tap to choose a video</div>
+      <div class="small">The server will listen, translate, dub and edit it for you.</div>
+      <div id="fileName"></div>
+    </div>
+    <input type="file" id="file" accept="video/*,.mkv,.avi" style="display:none">
+    <video id="preview" controls playsinline></video>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">02</span>Languages &amp; voice · ဘာသာစကားနှင့် အသံ</h2>
+    <label>Video language (what people speak in the clip)</label>
+    <select id="src">
+      <option value="auto" selected>Auto-detect</option>
+      <option value="en">English · en</option>
+      <option value="my">Burmese · မြန်မာ · my</option>
+      <option value="th">Thai · ไทย · th</option>
+      <option value="zh-CN">Chinese · 中文 · zh</option>
+      <option value="ja">Japanese · 日本語 · ja</option>
+      <option value="ko">Korean · 한국어 · ko</option>
+      <option value="hi">Hindi · हिन्दी · hi</option>
+      <option value="id">Indonesian · Bahasa Indonesia · id</option>
+      <option value="vi">Vietnamese · Tiếng Việt · vi</option>
+      <option value="ms">Malay · Bahasa Melayu · ms</option>
+      <option value="es">Spanish · Español · es</option>
+      <option value="fr">French · Français · fr</option>
+      <option value="de">German · Deutsch · de</option>
+      <option value="ar">Arabic · العربية · ar</option>
+      <option value="bn">Bengali · বাংলা · bn</option>
+      <option value="ta">Tamil · தமிழ் · ta</option>
+      <option value="te">Telugu · తెలుగు · te</option>
+      <option value="ur">Urdu · اردو · ur</option>
+      <option value="pt">Portuguese · Português · pt</option>
+      <option value="ru">Russian · Русский · ru</option>
+      <option value="it">Italian · Italiano · it</option>
+      <option value="fil">Filipino · fil</option>
+      <option value="km">Khmer · ខ្មែរ · km</option>
+      <option value="lo">Lao · ລາວ · lo</option>
+    </select>
+    <div class="row">
+      <div>
+        <label>Dub language (new voice speaks…)</label>
+        <select id="tgt">
+          <option value="my" selected>Burmese · မြန်မာ · my</option>
+          <option value="en">English · en</option>
+          <option value="th">Thai · ไทย · th</option>
+          <option value="zh-CN">Chinese · 中文 · zh</option>
+          <option value="ja">Japanese · 日本語 · ja</option>
+          <option value="ko">Korean · 한국어 · ko</option>
+          <option value="hi">Hindi · हिन्दी · hi</option>
+          <option value="id">Indonesian · Bahasa Indonesia · id</option>
+          <option value="vi">Vietnamese · Tiếng Việt · vi</option>
+          <option value="ms">Malay · Bahasa Melayu · ms</option>
+          <option value="es">Spanish · Español · es</option>
+          <option value="fr">French · Français · fr</option>
+          <option value="de">German · Deutsch · de</option>
+          <option value="ar">Arabic · العربية · ar</option>
+          <option value="bn">Bengali · বাংলা · bn</option>
+          <option value="ta">Tamil · தமிழ் · ta</option>
+          <option value="te">Telugu · తెలుగు · te</option>
+          <option value="ur">Urdu · اردو · ur</option>
+          <option value="pt">Portuguese · Português · pt</option>
+          <option value="ru">Russian · Русский · ru</option>
+          <option value="it">Italian · Italiano · it</option>
+          <option value="fil">Filipino · fil</option>
+          <option value="km">Khmer · ខ្មែរ · km</option>
+          <option value="lo">Lao · ລາວ · lo</option>
+        </select>
+      </div>
+      <div>
+        <label>Voice · အသံ</label>
+        <select id="voice">
+          <option value="female" selected>Female · အမျိုးသမီး</option>
+          <option value="male">Male · အမျိုးသား</option>
+        </select>
+      </div>
+    </div>
+    <label>Video shape</label>
+    <select id="aspect">
+      <option value="original" selected>Original size</option>
+      <option value="9:16">9:16 — Reels / TikTok</option>
+      <option value="16:9">16:9 — YouTube</option>
+    </select>
+    <label class="check"><input type="checkbox" id="keepOrig">
+      Keep original sound quietly underneath the dub</label>
+    <button class="gen" id="generate">✨ Generate my dubbed video</button>
+    <div class="barwrap" id="barwrap"><div class="bar" id="bar"></div></div>
+    <div id="statusMsg"></div>
+    <a class="dl" id="download" href="#">⬇️ Download dubbed video</a>
+    <div class="srt" id="srtBox"><a id="srtLink" href="#">Also download the subtitles (.srt)</a></div>
+  </div>
+
+  <div class="note">
+    ℹ️ Honest notes: processing happens on the server (not on your phone), so stay on
+    this page while it works — a 1-minute clip can take a few minutes on a free server.
+    The AI voice is a synthetic voice, not a real person. Translation is automatic —
+    check the wording before you post. Short clips work best.
+  </div>
+
+  <footer>Recap Studio v3 AUTO · made for Zomi creators</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let fileObj = null, timer = null;
+
+$('drop').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', () => {
+  fileObj = $('file').files[0] || null;
+  if (!fileObj) return;
+  $('fileName').textContent = '🎞️ ' + fileObj.name;
+  const v = $('preview');
+  v.src = URL.createObjectURL(fileObj);
+  v.style.display = 'block';
+  markStep(2);
+});
+
+function markStep(n){
+  for (let i = 1; i <= 4; i++) $('st' + i).classList.toggle('on', i <= n);
+}
+function setStatus(txt, isErr){
+  const el = $('statusMsg');
+  el.style.display = 'block';
+  el.textContent = txt;
+  el.classList.toggle('err', !!isErr);
+}
+
+$('generate').addEventListener('click', async () => {
+  if (!fileObj) { setStatus('Choose a video first. / ဗီဒီယို အရင်ရွေးပါ', true); return; }
+  $('generate').disabled = true;
+  $('download').style.display = 'none';
+  $('srtBox').style.display = 'none';
+  $('barwrap').style.display = 'block';
+  $('bar').style.width = '2%';
+  markStep(3);
+  setStatus('Uploading…');
+  const fd = new FormData();
+  fd.append('file', fileObj);
+  fd.append('source_lang', $('src').value);
+  fd.append('target_lang', $('tgt').value);
+  fd.append('voice', $('voice').value);
+  fd.append('aspect', $('aspect').value);
+  fd.append('keep_original_audio', $('keepOrig').checked ? 'true' : 'false');
+  let job;
+  try {
+    const r = await fetch('/api/process', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Upload failed');
+    job = data.job_id;
+  } catch (e) {
+    setStatus('❌ ' + e.message, true);
+    $('generate').disabled = false;
+    return;
+  }
+  clearInterval(timer);
+  timer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status/' + job);
+      const s = await r.json();
+      $('bar').style.width = Math.max(2, s.percent || 0) + '%';
+      if (s.stage === 'done') {
+        clearInterval(timer);
+        markStep(4);
+        setStatus('✅ Done! Your dubbed video is ready.');
+        const d = $('download');
+        d.href = '/api/download/' + job;
+        d.style.display = 'block';
+        $('srtLink').href = '/api/subtitles/' + job;
+        $('srtBox').style.display = 'block';
+        $('generate').disabled = false;
+      } else if (s.stage === 'error') {
+        clearInterval(timer);
+        setStatus('❌ ' + (s.error || s.message || 'Processing failed'), true);
+        $('generate').disabled = false;
+      } else {
+        setStatus('⏳ ' + (s.message || 'Working…') + ' (' + (s.percent || 0) + '%)');
+      }
+    } catch (e) { /* keep polling through brief network drops */ }
+  }, 2500);
+});
+</script>
+</body>
+</html>
