@@ -43,6 +43,12 @@
   label{display:block;font-size:.84rem;color:var(--muted);margin:13px 0 6px}
   select{width:100%;background:#0a0a14;color:var(--text);border:1px solid var(--border);
          border-radius:12px;padding:13px;font-size:1rem}
+  input[type=password]{width:100%;background:#0a0a14;color:var(--text);border:1px solid var(--border);
+         border-radius:12px;padding:13px;font-size:1rem}
+  .resume{display:none;width:100%;margin-top:12px;background:linear-gradient(135deg,#b8860b,var(--gold2));
+       color:#1a1405;border:none;border-radius:999px;padding:14px;font-size:1rem;font-weight:700;
+       cursor:pointer}
+  .hint{color:var(--muted);font-size:.78rem;margin-top:6px;line-height:1.5}
   .row{display:flex;gap:10px}.row>div{flex:1}
   .check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:.9rem;color:var(--text)}
   .check input{width:20px;height:20px;accent-color:var(--violet)}
@@ -73,7 +79,8 @@
     <p>Upload a clip → Generate → Download. အလိုအလျောက် ဘာသာပြန် + အသံသစ် + စာတန်း</p>
     <div class="pills">
       <span class="pill hot">AUTO dub</span><span class="pill">Auto translate</span>
-      <span class="pill">Auto subtitles</span><span class="pill">Server render</span>
+      <span class="pill">Auto subtitles</span><span class="pill">Smart Sync</span>
+      <span class="pill">Server render</span><span class="pill">Resume if stopped</span>
     </div>
   </header>
 
@@ -172,9 +179,22 @@
     </select>
     <label class="check"><input type="checkbox" id="keepOrig">
       Keep original sound quietly underneath the dub</label>
+    <label>Translate mode · ဘာသာပြန်နည်း</label>
+    <select id="tmode">
+      <option value="fast" selected>Fast — free online translate</option>
+      <option value="quality">Quality — Gemini AI (story-aware, better Burmese)</option>
+    </select>
+    <div id="gemBox" style="display:none">
+      <label>Gemini API key</label>
+      <input type="password" id="gemkey" placeholder="Paste your free AI Studio key" autocomplete="off">
+      <div class="hint">Free from Google AI Studio. Used only for this job and
+        <b>never stored</b> — if you resume a stopped job later, it continues
+        with Fast mode unless the server has a key set.</div>
+    </div>
     <button class="gen" id="generate">✨ Generate my dubbed video</button>
     <div class="barwrap" id="barwrap"><div class="bar" id="bar"></div></div>
     <div id="statusMsg"></div>
+    <button class="resume" id="resumeBtn">↻ Resume from where it stopped</button>
     <a class="dl" id="download" href="#">⬇️ Download dubbed video</a>
     <div class="srt" id="srtBox"><a id="srtLink" href="#">Also download the subtitles (.srt)</a></div>
   </div>
@@ -182,8 +202,11 @@
   <div class="note">
     ℹ️ Honest notes: processing happens on the server (not on your phone), so stay on
     this page while it works — a 1-minute clip can take a few minutes on a free server.
-    The AI voice is a synthetic voice, not a real person. Translation is automatic —
-    check the wording before you post. Short clips work best.
+    <b>Smart Sync</b> is on: the picture is gently re-timed so it follows the new voice.
+    If a job stops (server restart, connection drop), the finished steps are saved —
+    tap <b>Resume</b> instead of starting over. The AI voice is a synthetic voice, not
+    a real person. Translation is automatic — check the wording before you post.
+    Short clips work best.
   </div>
 
   <footer>Recap Studio v3 AUTO · made for Zomi creators</footer>
@@ -191,7 +214,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let fileObj = null, timer = null;
+let fileObj = null, timer = null, lastJob = null;
 
 $('drop').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', () => {
@@ -202,6 +225,9 @@ $('file').addEventListener('change', () => {
   v.src = URL.createObjectURL(fileObj);
   v.style.display = 'block';
   markStep(2);
+});
+$('tmode').addEventListener('change', () => {
+  $('gemBox').style.display = $('tmode').value === 'quality' ? 'block' : 'none';
 });
 
 function markStep(n){
@@ -214,11 +240,45 @@ function setStatus(txt, isErr){
   el.classList.toggle('err', !!isErr);
 }
 
+function pollJob(job){
+  clearInterval(timer);
+  timer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status/' + job);
+      const s = await r.json();
+      $('bar').style.width = Math.max(2, s.percent || 0) + '%';
+      if (s.stage === 'done') {
+        clearInterval(timer);
+        markStep(4);
+        let done = '✅ Done! Your dubbed video is ready.';
+        if (s.translate) done += ' (Translate: ' + s.translate + ')';
+        setStatus(done);
+        const d = $('download');
+        d.href = '/api/download/' + job;
+        d.style.display = 'block';
+        $('srtLink').href = '/api/subtitles/' + job;
+        $('srtBox').style.display = 'block';
+        $('resumeBtn').style.display = 'none';
+        $('generate').disabled = false;
+      } else if (s.stage === 'error') {
+        clearInterval(timer);
+        setStatus('❌ ' + (s.error || s.message || 'Processing failed') +
+                  ' — the finished steps are saved, you can resume.', true);
+        $('resumeBtn').style.display = 'block';
+        $('generate').disabled = false;
+      } else {
+        setStatus('⏳ ' + (s.message || 'Working…') + ' (' + (s.percent || 0) + '%)');
+      }
+    } catch (e) { /* keep polling through brief network drops */ }
+  }, 2500);
+}
+
 $('generate').addEventListener('click', async () => {
   if (!fileObj) { setStatus('Choose a video first. / ဗီဒီယို အရင်ရွေးပါ', true); return; }
   $('generate').disabled = true;
   $('download').style.display = 'none';
   $('srtBox').style.display = 'none';
+  $('resumeBtn').style.display = 'none';
   $('barwrap').style.display = 'block';
   $('bar').style.width = '2%';
   markStep(3);
@@ -230,6 +290,9 @@ $('generate').addEventListener('click', async () => {
   fd.append('voice', $('voice').value);
   fd.append('aspect', $('aspect').value);
   fd.append('keep_original_audio', $('keepOrig').checked ? 'true' : 'false');
+  fd.append('translate_mode', $('tmode').value);
+  fd.append('sync_mode', 'smart');
+  if ($('tmode').value === 'quality') fd.append('gemini_api_key', $('gemkey').value.trim());
   let job;
   try {
     const r = await fetch('/api/process', { method: 'POST', body: fd });
@@ -241,31 +304,31 @@ $('generate').addEventListener('click', async () => {
     $('generate').disabled = false;
     return;
   }
-  clearInterval(timer);
-  timer = setInterval(async () => {
-    try {
-      const r = await fetch('/api/status/' + job);
-      const s = await r.json();
-      $('bar').style.width = Math.max(2, s.percent || 0) + '%';
-      if (s.stage === 'done') {
-        clearInterval(timer);
-        markStep(4);
-        setStatus('✅ Done! Your dubbed video is ready.');
-        const d = $('download');
-        d.href = '/api/download/' + job;
-        d.style.display = 'block';
-        $('srtLink').href = '/api/subtitles/' + job;
-        $('srtBox').style.display = 'block';
-        $('generate').disabled = false;
-      } else if (s.stage === 'error') {
-        clearInterval(timer);
-        setStatus('❌ ' + (s.error || s.message || 'Processing failed'), true);
-        $('generate').disabled = false;
-      } else {
-        setStatus('⏳ ' + (s.message || 'Working…') + ' (' + (s.percent || 0) + '%)');
-      }
-    } catch (e) { /* keep polling through brief network drops */ }
-  }, 2500);
+  lastJob = job;
+  pollJob(job);
+});
+
+$('resumeBtn').addEventListener('click', async () => {
+  if (!lastJob) return;
+  $('resumeBtn').style.display = 'none';
+  $('generate').disabled = true;
+  $('barwrap').style.display = 'block';
+  setStatus('Resuming from the last finished step…');
+  try {
+    const r = await fetch('/api/resume/' + lastJob, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Resume failed');
+    if (!data.resumed) {
+      setStatus('ℹ️ ' + (data.message || 'Nothing to resume.'));
+      $('generate').disabled = false;
+      return;
+    }
+    pollJob(lastJob);
+  } catch (e) {
+    setStatus('❌ ' + e.message, true);
+    $('resumeBtn').style.display = 'block';
+    $('generate').disabled = false;
+  }
 });
 </script>
 </body>
