@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+faster-whisper
+av==14.2.0
+# ^ PyAV pin: faster-whisper calls av.open(metadata_errors=...), removed in av>=15
+edge-tts
+gtts
+# ^ TTS fallback: gTTS voices a segment when edge-tts is unreachable
+# (Microsoft 403s its WSS endpoint from some networks)
+deep-translator
