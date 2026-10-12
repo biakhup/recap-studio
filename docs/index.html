@@ -486,6 +486,22 @@
     .dub-actions .action-btn { min-height: 52px; font-size: .95rem; }
     .transcript-area { min-height: 96px; }
     .honest-note { font-size: .8rem; color: var(--muted); margin: 10px 0 0; }
+    .whisper-box { border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line)); background: #1d1733; border-radius: 14px; padding: 14px; margin-top: 14px; }
+    .whisper-box h3 { margin: 0 0 4px; font-size: .92rem; line-height: 1.25; }
+    .whisper-box h3 span { color: var(--gold); }
+    .whisper-btn { width: 100%; min-height: 54px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 800; font-size: .98rem; padding: 13px 16px; cursor: pointer; box-shadow: 0 8px 26px rgba(139,92,246,.38); }
+    .whisper-btn:hover { background: var(--accent-hover); }
+    .whisper-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .whisper-progress { display: none; margin-top: 12px; }
+    .whisper-progress.show { display: block; }
+    .whisper-progress-meta { display: flex; justify-content: space-between; gap: 10px; font-size: .76rem; color: var(--muted); margin-bottom: 6px; }
+    .whisper-progress-track { height: 6px; background: var(--surface-soft); border-radius: 999px; overflow: hidden; }
+    .whisper-progress-bar { height: 100%; width: 0; background: var(--gold); transition: width .15s linear; }
+    .whisper-state { margin: 10px 0 0; min-height: 21px; color: var(--muted); font-size: .82rem; line-height: 1.45; }
+    .whisper-state strong { color: var(--ink); }
+    .whisper-state.error { color: var(--danger); }
+    .method-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; color: var(--muted); font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .method-divider::before, .method-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
     .export-panel .seg { border-color: color-mix(in srgb, currentColor 28%, transparent); }
     .export-panel .seg button { background: transparent; color: inherit; }
     .export-panel .seg button + button { border-color: color-mix(in srgb, currentColor 28%, transparent); }
@@ -622,10 +638,23 @@
             <button type="button" data-lang="my" class="active">Burmese · မြန်မာ</button>
             <button type="button" data-lang="en">English</button>
           </div>
-          <div class="dub-actions">
-            <button type="button" class="action-btn" id="transcribeBtn">Auto-transcribe the clip</button>
+          <div class="whisper-box" id="whisperBox">
+            <h3>Real transcription <span>· Whisper AI</span></h3>
+            <p class="honest-note" style="margin-top:0">Reads the words <strong style="color:var(--ink)">directly from your video file</strong> — not through the microphone. Runs fully on this phone / device with no server.</p>
+            <div class="dub-actions" style="margin-top:12px">
+              <button type="button" class="whisper-btn" id="whisperBtn">🎙 Transcribe video with Whisper (real, on this device)</button>
+            </div>
+            <div class="whisper-progress" id="whisperProgressWrap" aria-live="polite">
+              <div class="whisper-progress-meta"><span id="whisperProgressLabel">Preparing Whisper…</span><span id="whisperProgressValue"></span></div>
+              <div class="whisper-progress-track"><div class="whisper-progress-bar" id="whisperProgressBar"></div></div>
+            </div>
+            <p class="whisper-state" id="whisperState">First use downloads the Whisper model once (~40 MB) — then it works from this device. A small model, so words may need fixing in Step 3. Short clips (a few minutes) work best. Keep this page open while it works.</p>
           </div>
-          <p class="voice-state" id="transcribeState">Transcription runs on this device (Chrome / Android works best): tap the button, then play the clip out loud — your phone listens through its microphone. Or paste a transcript below.</p>
+          <div class="method-divider"><span>Or · microphone method</span></div>
+          <div class="dub-actions">
+            <button type="button" class="action-btn" id="transcribeBtn">Transcribe with microphone (secondary)</button>
+          </div>
+          <p class="voice-state" id="transcribeState">Secondary method — Chrome / Android works best: tap the button, then play the clip out loud — your phone listens through its microphone. Or paste a transcript below.</p>
           <div class="field" style="margin-top:12px">
             <label for="transcriptBox">Transcript — type, paste or edit it here</label>
             <textarea id="transcriptBox" class="transcript-area" placeholder="The words spoken in the clip appear here…"></textarea>
@@ -748,6 +777,7 @@
 
       var captions = [];
       var nextCaptionId = 1;
+      var currentVideoFile = null;
       var videoUrl = '';
       var voiceUrl = '';
       var resultUrl = '';
@@ -899,6 +929,7 @@
           toast('Choose a video file.');
           return;
         }
+        currentVideoFile = file;
         if (videoUrl) URL.revokeObjectURL(videoUrl);
         videoUrl = URL.createObjectURL(file);
         video.src = videoUrl;
@@ -1417,6 +1448,221 @@
           transcribeState.textContent = 'Could not start transcription in this browser.';
         }
       });
+
+      /* ---------- Real Whisper transcription (Transformers.js v3, in-browser) ---------- */
+      var WHISPER_CDN_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js';
+      var WHISPER_MODEL_ID = 'Xenova/whisper-tiny';
+      var whisperPipelineInstance = null;
+      var whisperIsLoading = false;
+      var whisperBtn = document.getElementById('whisperBtn');
+      var whisperState = document.getElementById('whisperState');
+      var whisperProgressWrap = document.getElementById('whisperProgressWrap');
+      var whisperProgressBar = document.getElementById('whisperProgressBar');
+      var whisperProgressValue = document.getElementById('whisperProgressValue');
+      var whisperProgressLabel = document.getElementById('whisperProgressLabel');
+
+      function setWhisperProgress(label, pct) {
+        if (!whisperProgressWrap) return;
+        whisperProgressWrap.classList.add('show');
+        if (label != null) whisperProgressLabel.textContent = label;
+        if (typeof pct === 'number' && isFinite(pct)) {
+          var clamped = Math.max(0, Math.min(100, pct));
+          whisperProgressBar.style.width = clamped.toFixed(1) + '%';
+          whisperProgressValue.textContent = Math.round(clamped) + '%';
+        }
+      }
+      function hideWhisperProgress() {
+        if (whisperProgressWrap) whisperProgressWrap.classList.remove('show');
+      }
+      function setWhisperState(html, isError) {
+        if (!whisperState) return;
+        whisperState.classList.toggle('error', !!isError);
+        whisperState.innerHTML = html;
+      }
+      function applyDetectedLanguage(langCode) {
+        if (!langCode) return;
+        var code = String(langCode).toLowerCase().trim();
+        var mapped = null;
+        if (code === 'en' || code === 'english' || code.indexOf('en-') === 0) mapped = 'en-US';
+        else if (code === 'my' || code === 'burmese' || code === 'myanmar' || code.indexOf('my-') === 0) mapped = 'my-MM';
+        if (!mapped || mapped === sourceLang) return;
+        sourceLang = mapped;
+        var seg = document.getElementById('srcLangSeg');
+        if (seg) {
+          var btns = seg.querySelectorAll('button');
+          for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].dataset.lang === mapped);
+        }
+        if (typeof populateVoices === 'function') populateVoices();
+      }
+      function feedWhisperSegmentsToLines(segments, fullText) {
+        var usable = (segments || []).filter(function (s) { return s && s.text && s.text.trim(); });
+        if (!usable.length && fullText && fullText.trim()) {
+          var dur = safeDuration() || 3;
+          usable = [{ start: 0, end: dur, text: fullText.trim() }];
+        }
+        if (!usable.length) return 0;
+        captions = [];
+        var oldRows = captionList.querySelectorAll('.caption-row');
+        oldRows.forEach(function (row) { row.remove(); });
+        usable.forEach(function (segItem) {
+          var s = Math.max(0, Number(segItem.start) || 0);
+          var e = Math.max(s + 0.5, Number(segItem.end) || (s + 3));
+          var cap = { id: nextCaptionId++, start: Math.round(s * 10) / 10, end: Math.round(e * 10) / 10, text: String(segItem.text).trim() };
+          captions.push(cap);
+          captionList.appendChild(captionRow(cap));
+        });
+        emptyCaptions.style.display = 'none';
+        refreshCaptionPreview();
+        return usable.length;
+      }
+      async function decodeVideoFileTo16kMono(file) {
+        var buffer = await file.arrayBuffer();
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('Web Audio is not available in this browser. Try Chrome on Android or desktop.');
+        var tmpCtx = new AC();
+        var decoded;
+        try {
+          decoded = await tmpCtx.decodeAudioData(buffer.slice(0));
+        } catch (decodeErr) {
+          throw new Error('This browser could not decode the audio inside that video file. Try an MP4 clip, or use the microphone method / paste a transcript.');
+        } finally {
+          try { await tmpCtx.close(); } catch (e) {}
+        }
+        var targetRate = 16000;
+        var OfflineAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (OfflineAC) {
+          var outLen = Math.max(1, Math.ceil(decoded.duration * targetRate));
+          var offline = new OfflineAC(1, outLen, targetRate);
+          var srcNode = offline.createBufferSource();
+          srcNode.buffer = decoded;
+          srcNode.connect(offline.destination);
+          srcNode.start(0);
+          var rendered = await offline.startRendering();
+          return rendered.getChannelData(0).slice();
+        }
+        /* Manual fallback: downmix + linear resample */
+        var numCh = decoded.numberOfChannels;
+        var inRate = decoded.sampleRate;
+        var inLen = decoded.length;
+        var mono = new Float32Array(inLen);
+        for (var ch = 0; ch < numCh; ch++) {
+          var chData = decoded.getChannelData(ch);
+          for (var i = 0; i < inLen; i++) mono[i] += chData[i] / numCh;
+        }
+        if (inRate === targetRate) return mono;
+        var ratio = inRate / targetRate;
+        var outLength = Math.floor(inLen / ratio);
+        var out = new Float32Array(outLength);
+        for (var j = 0; j < outLength; j++) {
+          var pos = j * ratio;
+          var idx = Math.floor(pos);
+          var frac = pos - idx;
+          var a = mono[idx] || 0;
+          var b = mono[Math.min(idx + 1, inLen - 1)] || 0;
+          out[j] = a + (b - a) * frac;
+        }
+        return out;
+      }
+      async function getWhisperPipeline() {
+        if (whisperPipelineInstance) return whisperPipelineInstance;
+        if (whisperIsLoading) throw new Error('Whisper is already loading — please wait.');
+        whisperIsLoading = true;
+        try {
+          setWhisperProgress('Downloading Whisper model… first use only (~40 MB)', 0);
+          /* Lazy-load Transformers.js v3 only on first tap — never on page load */
+          var mod = await import(WHISPER_CDN_URL);
+          if (mod && mod.env) {
+            try { mod.env.allowLocalModels = false; } catch (e) {}
+          }
+          var pipelineFn = mod.pipeline;
+          if (typeof pipelineFn !== 'function') throw new Error('Whisper library did not load correctly.');
+          whisperPipelineInstance = await pipelineFn('automatic-speech-recognition', WHISPER_MODEL_ID, {
+            dtype: 'q8',
+            progress_callback: function (data) {
+              if (!data) return;
+              if (data.status === 'progress' && typeof data.progress === 'number') {
+                var fileLabel = data.file ? 'Downloading model — ' + String(data.file).split('/').pop() : 'Downloading Whisper model… first use only (~40 MB)';
+                setWhisperProgress(fileLabel, data.progress);
+              } else if (data.status === 'initiate') {
+                setWhisperProgress('Downloading Whisper model… first use only (~40 MB)', 0);
+              } else if (data.status === 'done') {
+                setWhisperProgress('Model download complete', 100);
+              } else if (data.status === 'ready') {
+                setWhisperProgress('Whisper ready', 100);
+              }
+            }
+          });
+          return whisperPipelineInstance;
+        } finally {
+          whisperIsLoading = false;
+        }
+      }
+      async function runWhisperTranscription() {
+        if (!whisperBtn || whisperBtn.disabled) return;
+        if (!currentVideoFile && !video.src) {
+          setWhisperState('<strong>No video yet.</strong> Add your clip in Step 1 first, then tap this button again.', true);
+          toast('Add a video clip first (Step 1).');
+          return;
+        }
+        if (!currentVideoFile) {
+          setWhisperState('<strong>Please re-select your video file in Step 1</strong> so Whisper can read its audio directly, then try again.', true);
+          toast('Re-select the video in Step 1, then try Whisper again.');
+          return;
+        }
+        whisperBtn.disabled = true;
+        var originalBtnText = whisperBtn.textContent;
+        whisperBtn.textContent = '⏳ Whisper is working…';
+        setWhisperState('<strong>Starting Whisper…</strong> Keep this page open.');
+        setWhisperProgress('Preparing audio from your video…', 0);
+        try {
+          var audioData = await decodeVideoFileTo16kMono(currentVideoFile);
+          if (!audioData || !audioData.length) throw new Error('No audio was found in that video file.');
+          setWhisperProgress('Audio ready — loading Whisper…', 100);
+          var transcriber = await getWhisperPipeline();
+          setWhisperProgress('Transcribing… keep this page open', 100);
+          setWhisperState('<strong>Transcribing… keep this page open.</strong> Whisper is listening to your video on this device — a few minutes of video can take a while on a phone.');
+          whisperBtn.textContent = '⏳ Transcribing… keep this page open';
+          var output = await transcriber(audioData, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true });
+          var fullText = '';
+          var segments = [];
+          var detectedLang = null;
+          if (Array.isArray(output)) {
+            fullText = output.map(function (o) { return (o && o.text) || ''; }).join(' ').trim();
+          } else if (output) {
+            fullText = (output.text || '').trim();
+            detectedLang = output.language || output.detected_language || null;
+            if (Array.isArray(output.chunks)) {
+              segments = output.chunks.map(function (chunk) {
+                var ts = chunk.timestamp || [0, 0];
+                return { start: ts[0], end: (ts[1] == null ? (Number(ts[0]) || 0) + 3 : ts[1]), text: chunk.text || '' };
+              });
+              if (!detectedLang && output.chunks[0] && output.chunks[0].language) detectedLang = output.chunks[0].language;
+            }
+          }
+          if (!fullText && !segments.length) throw new Error('Whisper finished but heard no words. Check the clip has clear speech, then try again.');
+          if (detectedLang) applyDetectedLanguage(detectedLang);
+          if (fullText) transcriptBox.value = fullText;
+          else if (segments.length) transcriptBox.value = segments.map(function (s) { return s.text.trim(); }).join(' ').trim();
+          var count = feedWhisperSegmentsToLines(segments, fullText);
+          hideWhisperProgress();
+          if (count > 0) {
+            setWhisperState('<strong>Done — ' + count + ' timed line' + (count === 1 ? '' : 's') + ' added in Step 3.</strong> Read every line and fix any words (small model), then translate or dub.', false);
+            toast('Whisper done — ' + count + ' lines in Step 3. Check the words.');
+          } else {
+            setWhisperState('<strong>Done.</strong> Transcript is in the box below — tap “Split into timed lines” to time it.', false);
+          }
+        } catch (err) {
+          hideWhisperProgress();
+          var msg = (err && err.message) ? err.message : String(err || 'Unknown error');
+          var isNetwork = /fetch|network|Failed to fetch|load failed|import/i.test(msg);
+          setWhisperState('<strong>Whisper could not finish:</strong> ' + msg + (isNetwork ? ' — this first load needs internet to download the model (~40 MB) from Hugging Face. Check your connection and tap the button to retry.' : ' Tap the button to retry.'), true);
+          toast('Whisper failed — see Step 2 for details and retry.');
+        } finally {
+          whisperBtn.disabled = false;
+          whisperBtn.textContent = originalBtnText;
+        }
+      }
+      if (whisperBtn) whisperBtn.addEventListener('click', runWhisperTranscription);
 
       /* Split the transcript into timed lines spread across the clip */
       document.getElementById('splitBtn').addEventListener('click', function () {
