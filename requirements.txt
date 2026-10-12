@@ -9,3 +9,5 @@ gtts
 # ^ TTS fallback: gTTS voices a segment when edge-tts is unreachable
 # (Microsoft 403s its WSS endpoint from some networks)
 deep-translator
+requests
+# ^ used directly by pipeline.py for the Gemini quality-translate mode
